@@ -37,6 +37,12 @@ opencode plugin add 'github:JelawatIHPC/opencode-encoding-tools#0.1.0'
 }
 ```
 
+仓库当前为私有；使用 HTTPS 安装需要凭据，或改用 SSH spec 复用本机 SSH key：
+
+```bash
+opencode plugin add 'git+ssh://git@github.com/JelawatIHPC/opencode-encoding-tools.git#0.1.0'
+```
+
 验证：
 
 ```bash
