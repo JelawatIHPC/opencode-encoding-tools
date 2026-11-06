@@ -1,0 +1,13 @@
+const fs=require('fs'), path=require('path'); const I=require('iconv-lite');
+const W=require('../dist/write.js');
+const D=require("./helpers/tmp")("final");
+fs.rmSync(D,{recursive:true,force:true}); fs.mkdirSync(D,{recursive:true});
+const J=p=>path.join(D,p);
+fs.writeFileSync(J('b5.txt'), I.encode('繁體新內容\n','big5'));
+console.log('detect:', JSON.stringify(require('../dist/charset.js').detectCharset(fs.readFileSync(J('b5.txt')))));
+let r=W.writeTool({filePath:'b5.txt',content:'繁體中文\n'},D);
+console.log('--- no charset ---\n'+r.output.split('\n\n').slice(1).join('\n'));
+console.log('bytes:', fs.readFileSync(J('b5.txt')).toString('hex'));
+fs.writeFileSync(J('b5.txt'), I.encode('繁體新內容\n','big5'));
+r=W.writeTool({filePath:'b5.txt',content:'繁體中文\n',charset:'big5'},D);
+console.log('--- with charset=big5 --- warn='+/Warning:/.test(r.output)+' bytes='+fs.readFileSync(J('b5.txt')).toString('hex'));

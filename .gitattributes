@@ -1,0 +1,8 @@
+* text=auto eol=lf
+
+# Byte-exact encoding fixtures: never apply EOL conversion.
+tests/sample_gbk.txt -text
+tests/sample_utf16le.txt -text
+tests/sample_utf16be.txt -text
+tests/sample_utf8bom.txt -text
+tests/write_gbk.txt -text

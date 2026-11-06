@@ -1,0 +1,53 @@
+{
+  "name": "opencode-encoding-tools",
+  "version": "0.1.0",
+  "description": "Charset-aware replacements for OpenCode's read, write, edit, patch, grep and shell tools.",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "compile": "tsc -p tsconfig.json && node scripts/mark-dist.cjs",
+    "test": "npm run compile && node tests/run.js",
+    "test:only": "node tests/run.js",
+    "cli": "node dist/cli.js"
+  },
+  "dependencies": {
+    "chardet": "^2.2.0",
+    "diff": "^9.0.0",
+    "iconv-lite": "^0.7.3",
+    "micromatch": "^4.0.8"
+  },
+  "devDependencies": {
+    "@types/chardet": "^0.8.3",
+    "@types/diff": "^7.0.2",
+    "@types/micromatch": "^4.0.10",
+    "@types/node": "^26.6.4",
+    "typescript": "^7.0.2"
+  },
+  "keywords": [
+    "opencode",
+    "opencode-plugin",
+    "charset",
+    "encoding",
+    "gbk",
+    "gb2312",
+    "gb18030",
+    "big5"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/JelawatIHPC/opencode-encoding-tools.git"
+  },
+  "bugs": {
+    "url": "https://github.com/JelawatIHPC/opencode-encoding-tools/issues"
+  },
+  "homepage": "https://github.com/JelawatIHPC/opencode-encoding-tools#readme"
+}
