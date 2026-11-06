@@ -37,7 +37,13 @@ opencode plugin add 'github:JelawatIHPC/opencode-encoding-tools#0.1.0'
 }
 ```
 
-仓库当前为私有；使用 HTTPS 安装需要凭据，或改用 SSH spec 复用本机 SSH key：
+仓库当前为私有。HTTPS 安装会复用本机 Git 凭据，使用完整 spec：
+
+```bash
+opencode plugin add 'opencode-encoding-tools@git+https://github.com/JelawatIHPC/opencode-encoding-tools.git#0.1.0'
+```
+
+如果本机已配置 GitHub SSH key，也可以使用 SSH spec：
 
 ```bash
 opencode plugin add 'git+ssh://git@github.com/JelawatIHPC/opencode-encoding-tools.git#0.1.0'
@@ -48,6 +54,8 @@ opencode plugin add 'git+ssh://git@github.com/JelawatIHPC/opencode-encoding-tool
 ```bash
 opencode plugin list
 ```
+
+注：在 2.2.5 上 `plugin list` 只枚举本地 `plugins/` 目录，不会列出由 `plugins` 配置项安装的 Git 插件；请以配置文件和实际工具行为为准。
 
 卸载：
 
