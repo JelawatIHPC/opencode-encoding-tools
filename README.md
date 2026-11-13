@@ -143,6 +143,37 @@ opencode plugin remove opencode-encoding-tools
 
 **边界**：一次命令中若某个程序坚持输出非 UTF-8（如硬编码 GBK），与 UTF-8 部分混排后仍无法两全；可让该程序单独成一条命令。截断阈值取原生默认值；若在配置里自定义过 `tool_output`，本实现目前仍用默认值。
 
+### 写文件命令拦截（write-command guard）
+
+`shell` 会在 **spawn 之前**检查命令文本，命中即拒绝执行（不会产生任何副作用）。原因：PowerShell 的文本 cmdlet 回写时按自己的输出编码重新编码（可能增删 BOM，或退化成 UTF-16LE）并折叠行尾，这正是本项目源码曾被改成全 LF 的根因——而 `read/write/edit/patch` 已经能正确保留编码、BOM 与逐行换行。
+
+被拒绝的命令：
+
+| 命令 | 说明 |
+|---|---|
+| `Out-File` / `Set-Content` | 文本回写，会静默改变文件编码 |
+| `Add-Content` | 追加写入，会静默产生混合编码 |
+| `Clear-Content` | 原地截断，内容不可恢复 |
+| `Remove-Item` 及别名 `ri` / `rm` / `del` / `erase` / `rd` / `rmdir` | 不可恢复删除；提示改用回收站 API |
+| `[System.IO.File]::WriteAll*` / `AppendAll*` / `Delete`、`[System.IO.Directory]::Delete` | 绕过全部编码检查 |
+| `sed -i` / `--in-place` | 按 sed 自己的字节语义重写 |
+| `truncate -s`、`dd if=`/`of=` | 原地改长度或写裸字节 |
+
+**`>` / `>>` 重定向不在此拦截范围内**（项目自身构建约定依赖 `> $null`），改由项目说明（`AGENTS.md`）约束。
+
+匹配方式统一为**命令位置**匹配：只有出现在语句起始、`|`/`;`/`&` 之后、开括号之后、`=`/`,` 右侧，或调用运算符 `& 'xxx'` 之后才会被拒绝。因此 `Select-String -Pattern "Set-Content"`、文件名 `mySet-Content.py`、`"Out-File is the old way"` 这类「只是提到」的用法**不受影响**；而 `'x' | Out-File a.txt` 这类真实调用照常拦截。`$rm = 1` 也不会误伤（`$` 不是语句边界）。
+
+文案以命令名开头，删除类会回显模型实际使用的别名：
+
+```
+Set-Content: Set-Content is disabled because it may change file encoding silently. Use the write/edit/patch tools, or put the command in a script file for legitimate case.
+Remove-Item: Remove-Item is disabled because it deletes file irreversibly. Move the target to the recycle bin via `[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile` or `[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory` instead.
+```
+
+**绕过方式（有意保留）**：确有必要时，把命令写进脚本文件再执行该脚本（`& ./script.ps1`、`python script.py`）。这样模型必须显式落盘一个脚本，是可见、可审计的行为。
+
+**限制**：本插件只预防模型犯错，设计上排除字符串拼接等恶意绕过行为（例如 `& ('Remove' + '-Item')`）。
+
 ### 同批次错误汇总（batch digest）
 
 OpenCode 对**并发**插件工具的异常有缺陷——同一批次（同一条 assistant 消息）里多个插件工具报错时，宿主会把所有 error 串成**第一条**的消息（原生 `shell` 不受影响）。插件的应对：按 `context.messageID` 归组同一批次的调用——**成功的调用照常返回自己的 content**；只要有一条失败，该批次里所有失败的调用都抛出同一份按序汇总：
@@ -203,7 +234,7 @@ scripts/    仅构建期辅助（dist 的 CommonJS 标记）
 测试说明：
 
 - 测试通过 `require("../dist/...")` 加载编译产物，因此需要先 `npm run compile`。
-- `shell` 相关用例依赖 Windows PowerShell 与控制台代码页；非 Windows 平台会自动跳过 `shell_test.js` / `plugin_reg_test.js`。
+- `shell` 相关用例依赖 Windows PowerShell 与控制台代码页；非 Windows 平台会自动跳过 `shell_test.js` / `shell_guard_test.js` / `plugin_reg_test.js`。
 - 测试全部使用系统临时目录，不依赖固定路径。
 
 ## 兼容性

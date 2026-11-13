@@ -186,6 +186,138 @@ function assertWorkdir(dir: string): void {
   if (!st.isDirectory()) throw new Error(`Working directory is not a directory: ${dir}`);
 }
 
+// ---------------------------------------------------------------------------
+// Write-command guard
+//
+// A shell text pipeline (Get-Content | Set-Content, Out-File, Add-Content) is the
+// easiest way to silently change a file's bytes: PowerShell re-encodes on the way
+// out (adding or dropping a BOM, switching to UTF-16LE) and its universal-newline
+// handling collapses CRLF to LF. A dedicated tool already preserves encoding, BOM
+// and per-line EOL, so these commands are refused outright. Deleting files is
+// likewise routed to the recycle bin: an unrecoverable delete is never what a
+// task actually needs.
+//
+// Every entry matches at a *command position* (start of a statement, after a
+// pipe/separator, after an opening bracket, or after `=`/`,`), never as a bare
+// substring. That keeps read-only work usable — `Select-String -Pattern
+// "Set-Content"` and a filename like `mySet-Content.py` must not be refused —
+// while still catching every real invocation, including `| Out-File`.
+//
+// `>` / `>>` redirection is deliberately NOT guarded here: the project's build
+// convention relies on `> $null`, and shell redirection is constrained by the
+// project instructions instead of by the tool.
+// ---------------------------------------------------------------------------
+
+// A statement starts at the beginning of the command, after a pipe or statement
+// separator, after an opening bracket, or after `=`/`,` (an assignment right-hand
+// side). `$(` covers subexpressions; `$rm = 1` stays allowed because `$` is not a
+// statement boundary.
+const STMT_PREFIX = "(?:^|[|;&\\n({=,]|\\$\\()";
+
+// Build a command-position matcher. Group 1 (plain form) / group 2 (call-operator
+// form) capture the matched name so the error can echo the alias the model used
+// (`ri` rather than a generic `Remove-Item`). The trailing lookahead keeps
+// `Set-ContentX` and `mySet-Content` from matching.
+function cmd(names: string[]): RegExp {
+  const alt = names.join("|");
+  return new RegExp(`(?:${STMT_PREFIX}\\s*(${alt})|&\\s*['"](${alt})['"])(?=[\\s|;&)(]|$)`, "i");
+}
+
+interface ForbiddenCommand {
+  // Prefix used when the matcher cannot report a name (fixed-flag forms).
+  name: string;
+  command: RegExp;
+  message: (matched: string) => string;
+}
+
+const FORBIDDEN_COMMANDS: ForbiddenCommand[] = [
+  {
+    name: "Out-File",
+    command: cmd(["Out-File"]),
+    message: (m) =>
+      `${m} is disabled because it may change file encoding silently. ` +
+      `Use the write/edit/patch tools, or put the command in a script file for legitimate case.`,
+  },
+  {
+    name: "Set-Content",
+    command: cmd(["Set-Content"]),
+    message: (m) =>
+      `${m} is disabled because it may change file encoding silently. ` +
+      `Use the write/edit/patch tools, or put the command in a script file for legitimate case.`,
+  },
+  {
+    name: "Add-Content",
+    command: cmd(["Add-Content"]),
+    message: (m) =>
+      `${m} is disabled because it may create mixed encoding silently. ` +
+      `Use the write/edit/patch tools, or put the command in a script file for legitimate case.`,
+  },
+  {
+    name: "Clear-Content",
+    command: cmd(["Clear-Content"]),
+    message: (m) =>
+      `${m} is disabled because it deletes content irreversibly. ` +
+      `Use the write tool with the intended content instead, or put the command in a script file for legitimate case.`,
+  },
+  {
+    name: "Remove-Item",
+    // PowerShell resolves ri/rm/del/erase/rd/rmdir to Remove-Item, so the aliases
+    // must be covered too.
+    command: cmd(["Remove-Item", "ri", "rm", "del", "erase", "rd", "rmdir"]),
+    message: (m) =>
+      `${m} is disabled because it deletes file or directory irreversibly. ` +
+      `Move the target to the recycle bin via \`[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteFile\` or ` +
+      `\`[Microsoft.VisualBasic.FileIO.FileSystem]::DeleteDirectory\` instead.`,
+  },
+  {
+    name: ".NET file write",
+    command: cmd([
+      "\\[System\\.IO\\.File\\]::WriteAllText",
+      "\\[System\\.IO\\.File\\]::WriteAllBytes",
+      "\\[System\\.IO\\.File\\]::WriteAllLines",
+      "\\[System\\.IO\\.File\\]::AppendAllText",
+      "\\[System\\.IO\\.File\\]::AppendAllLines",
+      "\\[System\\.IO\\.File\\]::Delete",
+      "\\[System\\.IO\\.Directory\\]::Delete",
+    ]),
+    message: () =>
+      `Direct .NET file writes are disabled because it may change file encoding silently. ` +
+      `Use the write/edit/patch tools, or put the command in a script file for legitimate case.`,
+  },
+  {
+    name: "sed -i",
+    command: new RegExp(`${STMT_PREFIX}\\s*sed\\s+(?:-[A-Za-z]*i[A-Za-z]*\\b|--in-place)`, "i"),
+    message: () =>
+      `In-place sed is disabled because it rewrites the file with sed's own byte handling. ` +
+      `Use the edit/patch tools, or put the command in a script file for legitimate case.`,
+  },
+  {
+    name: "truncate",
+    command: new RegExp(`${STMT_PREFIX}\\s*truncate\\s+-`, "i"),
+    message: () =>
+      `truncate is disabled because it changes a file's size in place, destroying its content with no way back. ` +
+      `Use the write/edit/patch tools, or put the command in a script file for legitimate case.`,
+  },
+  {
+    name: "dd",
+    command: new RegExp(`${STMT_PREFIX}\\s*dd\\s[^\\n]*\\b(?:if|of)=`, "i"),
+    message: () =>
+      `dd is disabled because it writes raw bytes over a file, destroying its content and charset. ` +
+      `Use the write/edit/patch tools, or put the command in a script file for legitimate case.`,
+  },
+];
+
+function assertWriteSafe(command: string): void {
+  for (const f of FORBIDDEN_COMMANDS) {
+    const m = f.command.exec(command);
+    if (!m) continue;
+    // Echo the alias the model actually used (`del`, `ri`, ...); fall back to the
+    // entry's canonical name when the matcher carries no capture group.
+    const matched = m[1] || m[2] || f.name;
+    throw new Error(`${matched}: ${f.message(matched)}`);
+  }
+}
+
 interface Preview {
   body: string;
   truncated: boolean;
@@ -274,6 +406,7 @@ export async function shellTool(params: ShellParams, cwd: string, signal?: Abort
   if (typeof params.timeout === "number" && params.timeout < 0) {
     throw new Error("timeout: Expected a value greater than or equal to 0");
   }
+  assertWriteSafe(command);
   const workdir = resolveWorkdir(params.workdir, cwd);
   assertWorkdir(workdir);
   const { file, args } = shellInvocation(command);
