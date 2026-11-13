@@ -183,7 +183,8 @@ function isPdf(buf: Buffer, filepath: string): boolean {
   return buf.subarray(0, 4).toString("latin1") === "%PDF" || path.extname(filepath).toLowerCase() === ".pdf";
 }
 
-const CHARSET_DESCRIPTION = "Generally not required: character set, default utf-8.";
+const CHARSET_DESCRIPTION = 'Generally not required: character set, default utf-8. "utf8bom" (alias "utf-8-sig") means UTF-8 with a BOM.';
+const CHARSET_WRITE_DESCRIPTION = CHARSET_DESCRIPTION + " A missing BOM is added with a warning.";
 
 // The native tools' input schemas are redacted to a stub function when exposed to
 // plugins, so an extra property cannot be merged in. We therefore declare the
@@ -206,7 +207,7 @@ const WRITE_INPUT = {
   properties: {
     path: { type: "string", description: "The file path to write to (created if missing)." },
     content: { type: "string", description: "The full file content to write." },
-    charset: { type: "string", description: CHARSET_DESCRIPTION },
+    charset: { type: "string", description: CHARSET_WRITE_DESCRIPTION },
   },
   required: ["path", "content"],
   additionalProperties: false,
@@ -219,7 +220,7 @@ const EDIT_INPUT = {
     oldString: { type: "string", description: "Exact text to replace. Must match uniquely unless replaceAll is true." },
     newString: { type: "string", description: "Replacement text." },
     replaceAll: { type: "boolean", description: "Replace every occurrence of oldString." },
-    charset: { type: "string", description: CHARSET_DESCRIPTION },
+    charset: { type: "string", description: CHARSET_WRITE_DESCRIPTION },
   },
   required: ["path", "oldString", "newString"],
   additionalProperties: false,
@@ -229,7 +230,7 @@ const PATCH_INPUT = {
   type: "object",
   properties: {
     patchText: { type: "string", description: "The full patch text (*** Begin Patch ... *** End Patch)." },
-    charset: { type: "string", description: CHARSET_DESCRIPTION },
+    charset: { type: "string", description: CHARSET_WRITE_DESCRIPTION },
   },
   required: ["patchText"],
   additionalProperties: false,

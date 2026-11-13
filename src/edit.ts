@@ -4,7 +4,7 @@ import { createTwoFilesPatch, diffLines } from "diff";
 import { readFileDetected, writeFileEncoded } from "./encoding";
 import { trimDiff } from "./write";
 import { analyzeText, detectEol, replaceEolInsensitive, mixedEolWarning, type Eol } from "./eol";
-import { normalizeCharsetParam, assertEncodable, assertRepertoireCompatible, chooseWritableEncoding, charsetWarningText, type CharsetInfo } from "./charset";
+import { normalizeCharsetParam, assertEncodable, assertRepertoireCompatible, chooseWritableEncoding, charsetWarningText, requestsUtf8Bom, bomAddedWarning, type CharsetInfo } from "./charset";
 
 export interface EditParams {
   path: string;
@@ -51,6 +51,7 @@ export function editTool(params: EditParams, cwd: string): ToolReturn {
   if (params.oldString === "") throw new Error("oldString must not be empty. Use write to create or overwrite a file.");
 
   const requested = normalizeCharsetParam(params.charset);
+  const bomRequested = requestsUtf8Bom(params.charset);
   const source = readFileDetected(filepath, requested);
   if (source.binary) throw new Error(`Cannot edit binary file: ${filepath}`);
 
@@ -89,13 +90,14 @@ export function editTool(params: EditParams, cwd: string): ToolReturn {
   // Stay inside the repertoire the model asked for (gbk / gb2312), or — with no
   // explicit charset — the existing file's own plain-GBK level.
   assertRepertoireCompatible(replaced, params.charset, source.gbkLevel);
-  writeFileEncoded(filepath, replaced, writeEncoding, source.bom);
+  writeFileEncoded(filepath, replaced, writeEncoding, bomRequested || source.bom);
 
   const patch = trimDiff(createTwoFilesPatch(filepath, filepath, source.text, replaced));
   let output = [`Edited file successfully: ${filepath}`, `Replacements: ${replacements}`, "```diff", ...previewLines(params.oldString, "-"), ...previewLines(params.newString, "+"), "```"].join("\n");
   const metadata: any = { files: [{ file: filepath, patch, status: "modified", additions, deletions }], replacements, diff: patch, eol: ending === "\r\n" ? "CRLF" : "LF", charset: writeEncoding };
   const warnings: string[] = [];
   if (oldInfo.mixed || newInfo.mixed) warnings.push(mixedEolWarning(ending));
+  if (bomRequested && !source.bom) warnings.push(bomAddedWarning());
   if (!requested && source.charsetInfo?.warn) warnings.push(charsetWarningText(source.charsetInfo, writeEncoding));
   if (warnings.length > 0) {
     output += `\n\n${warnings.join("\n\n")}`;

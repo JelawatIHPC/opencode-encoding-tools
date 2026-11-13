@@ -88,7 +88,7 @@ opencode plugin remove opencode-encoding-tools
 6. 置信度低且出现 CJK 候选时，按 中文(gb18030) → Big5 → Shift_JIS → EUC 优先；否则兜底 `gb18030`。
 7. **判定分档**：UTF-8（BOM / 严格 UTF-8 / 近 UTF-8 / 纯 ASCII）、GB18030 四字节、chardet 满分 100 视为**确定**，静默处理；其余非 UTF-8 视为**不确定**，`write` / `edit` / `patch` 会追加字符集警告。
 
-写盘：新文件默认 UTF-8 + 平台换行（Windows 为 CRLF，其余 LF）；已有文件保留原 `encoding + bom + 换行风格`。若为**确定**编码且内容无法无损表示（如往 Big5 文件写 emoji）→ 报错拒绝；若为**不确定**编码 → 仍写入（选用能表示内容的候选编码）并追加警告。
+写盘：新文件默认 UTF-8 + 平台换行（Windows 为 CRLF，其余 LF）；已有文件保留原 `encoding + bom + 换行风格`；显式 `charset="utf8bom"` 例外，会补上 UTF-8 BOM（见下节）。若为**确定**编码且内容无法无损表示（如往 Big5 文件写 emoji）→ 报错拒绝；若为**不确定**编码 → 仍写入（选用能表示内容的候选编码）并追加警告。
 
 ### 保持 GBK 严格性
 
@@ -118,6 +118,12 @@ opencode plugin remove opencode-encoding-tools
 其他规则：
 
 - 名称会归一化别名（`gbk` / `gb2312` / `cp936` → `gb18030`，`latin1` / `iso-8859-1` → `windows-1252` 等）；未知名称报错并列出支持列表。
+- `charset="utf8bom"`（别名 `utf-8-sig`，`UTF-8-BOM` 等写法等价）表示「UTF-8 + BOM」，内部编码仍是 `utf8`：
+  - 新建文件（`write` 新路径、`patch` 的 Add File）直接写入 BOM。
+  - 覆盖/编辑**无 BOM 的 UTF-8 文件**时补上 BOM，并在结果末尾追加 `Warning: charset="utf8bom" was requested, so a UTF-8 BOM was added to this file`。
+  - 文件已有 BOM 则原样保留，不告警，也不会重复写 BOM。
+  - 对其他确定编码（UTF-16、GBK 等）请求 `utf8bom` 仍按 `Charset mismatch` 拒绝；`read` 接受该值但不改变任何字节。
+- `charset="utf8"` 不改变文件现有 BOM 状态（有 BOM 就保留）。
 - 新建文件（`write` 新路径、`patch` 的 Add File）按 `charset` 编码；内容含该字符集无法表示的字符则报错。
 - `patch` 涉及多文件时**逐文件独立判定**：失败的文件跳过并列出原因，其余照常写入，允许部分成功。
 

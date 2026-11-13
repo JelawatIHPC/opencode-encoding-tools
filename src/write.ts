@@ -3,7 +3,7 @@ import * as path from "path";
 import { createTwoFilesPatch, diffLines } from "diff";
 import { readFileDetected, writeFileEncoded } from "./encoding";
 import { analyzeText, detectEol, normalizeTo, eolName, mixedEolWarning, defaultEol, type Eol } from "./eol";
-import { normalizeCharsetParam, resolveCharsetForContent, assertEncodable, assertRepertoireCompatible, chooseWritableEncoding, charsetWarningText, type CharsetInfo } from "./charset";
+import { normalizeCharsetParam, resolveCharsetForContent, assertEncodable, assertRepertoireCompatible, chooseWritableEncoding, charsetWarningText, requestsUtf8Bom, bomAddedWarning, type CharsetInfo } from "./charset";
 
 export interface WriteParams {
   content: string;
@@ -21,6 +21,7 @@ export function writeTool(params: WriteParams, cwd: string, defaultEncoding = "u
   const filepath = path.isAbsolute(params.filePath) ? params.filePath : path.join(cwd, params.filePath);
   fs.mkdirSync(path.dirname(filepath), { recursive: true });
   const requested = normalizeCharsetParam(params.charset);
+  const bomRequested = requestsUtf8Bom(params.charset);
   const exists = fs.existsSync(filepath);
   const source = exists ? readFileDetected(filepath, requested) : { text: "", encoding: defaultEncoding, bom: false, binary: false, charsetInfo: undefined as CharsetInfo | undefined };
   const oldText = exists ? source.text : "";
@@ -28,7 +29,8 @@ export function writeTool(params: WriteParams, cwd: string, defaultEncoding = "u
   const eolInfo = analyzeText(params.content);
   const fileEol: Eol = exists ? detectEol(source.text) : defaultEol;
   const newText = normalizeTo(params.content, fileEol);
-  const desiredBom = exists ? source.bom : false;
+  // charset="utf8bom" forces a BOM; otherwise an existing file keeps its own.
+  const desiredBom = bomRequested || (exists ? source.bom : false);
   let desiredEncoding = exists && source.encoding !== "binary" ? source.encoding : requested ? resolveCharsetForContent(newText, requested) : defaultEncoding;
 
   // A non-authoritative (non-UTF-8, <100) file is a warning case: still write,
@@ -49,6 +51,7 @@ export function writeTool(params: WriteParams, cwd: string, defaultEncoding = "u
 
   const warnings: string[] = [];
   if (eolInfo.mixed) warnings.push(mixedEolWarning(fileEol));
+  if (bomRequested && exists && !source.bom) warnings.push(bomAddedWarning());
   if (exists && !requested && source.charsetInfo?.warn) warnings.push(charsetWarningText(source.charsetInfo, desiredEncoding));
   const metadata: any = { diagnostics: {}, filepath, exists, diff, eol: eolName(fileEol), charset: desiredEncoding };
   let output = "Wrote file successfully.";

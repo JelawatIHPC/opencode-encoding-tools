@@ -4,7 +4,7 @@ import { createTwoFilesPatch, diffLines } from "diff";
 import { readFileDetected, writeFileEncoded } from "./encoding";
 import { trimDiff } from "./write";
 import { analyzeText, detectEol, normalizeTo, mixedEolWarning, defaultEol, type Eol } from "./eol";
-import { normalizeCharsetParam, resolveCharsetForContent, assertEncodable, assertRepertoireCompatible, chooseWritableEncoding, charsetWarningText, type CharsetInfo } from "./charset";
+import { normalizeCharsetParam, resolveCharsetForContent, assertEncodable, assertRepertoireCompatible, chooseWritableEncoding, charsetWarningText, requestsUtf8Bom, bomAddedWarning, type CharsetInfo } from "./charset";
 
 export interface PatchParams {
   patchText: string;
@@ -44,6 +44,7 @@ export function patchTool(params: PatchParams, cwd: string): ToolReturn {
   }
 
   const requested = normalizeCharsetParam(params.charset);
+  const bomRequested = requestsUtf8Bom(params.charset);
   const fileChanges: any[] = [];
   const failures: Array<{ path: string; reason: string }> = [];
   const charsetWarnings: Array<{ path: string; text: string }> = [];
@@ -69,7 +70,7 @@ export function patchTool(params: PatchParams, cwd: string): ToolReturn {
           if (change.added) additions += change.count || 0;
           if (change.removed) deletions += change.count || 0;
         }
-        fileChanges.push({ filePath, oldContent, newContent, type: "add", diff, additions, deletions, encoding, bom: false });
+        fileChanges.push({ filePath, oldContent, newContent, type: "add", diff, additions, deletions, encoding, bom: bomRequested });
         totalDiff += diff + "\n";
         break;
       }
@@ -95,6 +96,9 @@ export function patchTool(params: PatchParams, cwd: string): ToolReturn {
           assertEncodable(newContent, source.encoding);
         }
         assertRepertoireCompatible(newContent, params.charset, source.gbkLevel);
+        if (bomRequested && !source.bom) {
+          charsetWarnings.push({ path: path.relative(cwd, filePath).replaceAll("\\", "/"), text: bomAddedWarning() });
+        }
         const diff = trimDiff(createTwoFilesPatch(filePath, filePath, oldContent, newContent));
         let additions = 0, deletions = 0;
         for (const change of diffLines(oldContent, newContent)) {
@@ -102,7 +106,7 @@ export function patchTool(params: PatchParams, cwd: string): ToolReturn {
           if (change.removed) deletions += change.count || 0;
         }
         const movePath = hunk.move_path ? path.resolve(cwd, hunk.move_path) : undefined;
-        fileChanges.push({ filePath, oldContent, newContent, type: hunk.move_path ? "move" : "update", movePath, diff, additions, deletions, encoding: writeEncoding, bom: source.bom });
+        fileChanges.push({ filePath, oldContent, newContent, type: hunk.move_path ? "move" : "update", movePath, diff, additions, deletions, encoding: writeEncoding, bom: bomRequested || source.bom });
         totalDiff += diff + "\n";
         break;
       }

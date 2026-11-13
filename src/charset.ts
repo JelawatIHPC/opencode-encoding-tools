@@ -51,9 +51,9 @@ const CJK_PREFERENCE = ["GB18030", "Big5", "Shift_JIS", "EUC-JP", "EUC-KR"];
 // Human-facing list of accepted charset names, used in tool descriptions and
 // error messages.
 export const CHARSET_HELP =
-  "utf-8, gb18030 (alias gbk/gb2312/cp936), big5, shift_jis, euc-jp, euc-kr, " +
-  "utf-16le, utf-16be, utf-32le, utf-32be, windows-1252 (alias latin1/iso-8859-1), " +
-  "windows-1251, iso-8859-5/6/7/8, koi8-r";
+  "utf-8, utf8bom (alias utf-8-sig, UTF-8 with BOM), gb18030 (alias gbk/gb2312/cp936), big5, shift_jis, " +
+  "euc-jp, euc-kr, utf-16le, utf-16be, utf-32le, utf-32be, " +
+  "windows-1252 (alias latin1/iso-8859-1), windows-1251, iso-8859-5/6/7/8, koi8-r";
 
 const LABELS: Record<string, string> = {
   utf8: "UTF-8",
@@ -86,6 +86,7 @@ export function charsetLabel(enc: string): string {
 const DIRECT: Record<string, string> = {
   utf8: "utf8",
   utf8bom: "utf8",
+  utf8sig: "utf8",
   ascii: "utf8",
   usascii: "utf8",
   utf16: "utf16le",
@@ -146,6 +147,20 @@ export function canonicalizeCharset(name: string | null | undefined): string | n
     if (iconv.encodingExists(v)) return v;
   } catch {}
   return null;
+}
+
+// `utf8bom` (alias `utf-8-sig`) is UTF-8 plus a file-level BOM, not a separate
+// codec: it canonicalizes to `utf8`, so the requested spelling is the only signal
+// that a BOM must be written. Checked on the raw parameter (separators ignored).
+export function requestsUtf8Bom(charset?: string | null): boolean {
+  if (charset == null) return false;
+  const v = String(charset).trim().toLowerCase().replace(/[^a-z0-9]+/g, "");
+  return v === "utf8bom" || v === "utf8sig";
+}
+
+// Model-facing notice when charset="utf8bom" writes over a file without a BOM.
+export function bomAddedWarning(): string {
+  return 'Warning: charset="utf8bom" was requested, so a UTF-8 BOM was added to this file (it previously had none).';
 }
 
 export function bomInfo(buf: Buffer): { encoding: string; offset: number } | null {
